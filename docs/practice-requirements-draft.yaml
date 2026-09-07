@@ -1,0 +1,116 @@
+# 自编学习需求草稿，非主办方正式赛题。先留作后续讨论；第一课不读取此文件。
+id: ROOT
+name: GitHub + Spreadsheets：Actions、组织权限、审计与 Rulesets
+type: FOLDER
+description: |
+  生成一个本地“组织协作与发布检查台”，包含 1 个组织、1 个仓库、3 个预置用户、
+  1 张预算表、1 个内置 validate-sheet 工作流和 1 条针对模拟 main 的规则集。
+  组织 owner/member 与仓库 read/write/admin 分开存储；本练习设 owner 拥有仓库 admin 权限。
+  预置身份切换仅为本地演示入口，后端仍须根据当前身份检查每个请求的权限。
+  数据在应用重启后保留。页面包含清楚的字段标签、操作按钮与错误信息。
+  “提交到 main”只保存表格版本快照；不实现真实 Git 托管、任意 shell 工作流、
+  OAuth 登录或完整电子表格公式引擎。审计事件使用本练习自定义名称。
+children:
+  # 后续实现依赖排序时，程序应根据依赖排序，而非照文件顺序执行。
+  - id: RULESETS
+    name: 针对当前版本的发布规则
+    type: ATOMIC
+    description: |
+      仓库 admin 可启用/停用针对模拟 main 的规则，要求当前表格版本的
+      validate-sheet 检查成功。read/write 可查看但不能改规则。
+      提交需要 write/admin。admin 不自动绕过规则，本练习不提供 bypass。
+    dependencies: [ACTIONS, PERMISSIONS, AUDIT]
+    scenarios:
+      - name: 缺少当前版本的成功检查时阻止提交
+        steps:
+          - {keyword: Given, content: 规则启用且当前表格版本没有成功检查}
+          - {keyword: When, content: write 或 admin 用户提交到 main}
+          - {keyword: Then, content: 后端拒绝提交并显示具体原因，main 快照不变}
+      - name: 编辑后旧检查失效
+        steps:
+          - {keyword: Given, content: 版本 3 检查成功并允许提交}
+          - {keyword: When, content: 用户编辑表格形成版本 4}
+          - {keyword: Then, content: 版本 3 的成功结果不能放行版本 4，重新检查成功才可提交}
+
+  - id: PERMISSIONS
+    name: 组织角色与仓库权限
+    type: ATOMIC
+    description: |
+      预置 alice 为 owner、bob 为 member/write、carol 为 member/read。
+      owner 可调整成员仓库权限；普通 member 不可调整他人权限。
+      所有写入和管理请求都在后端检查权限，隐藏按钮不能代替权限检查。
+    dependencies: []
+    scenarios:
+      - name: 成员身份不等于可写权限
+        steps:
+          - {keyword: Given, content: carol 的组织角色是 member 且仓库权限是 read}
+          - {keyword: When, content: carol 直接请求修改表格或调整 bob 的权限}
+          - {keyword: Then, content: 两个请求都返回 403 且数据不变}
+      - name: 授权持久化
+        steps:
+          - {keyword: Given, content: alice 是 owner 且 carol 是 read}
+          - {keyword: When, content: alice 授予 carol 仓库 write 权限并重启应用}
+          - {keyword: Then, content: carol 仍具有 write 权限且可以编辑表格}
+
+  - id: AUDIT
+    name: 可查询的组织审计记录
+    type: ATOMIC
+    description: |
+      对成功授权、表格修改、工作流触发、规则修改和提交保存审计事件，至少包含
+      actor/action/resource/timestamp。拒绝请求不能记作成功操作。
+      审计页仅供 owner 读取，可按 actor/action 过滤，不提供修改和删除接口。
+      工作流步骤日志单独保存，不混同组织审计。
+    dependencies: [PERMISSIONS]
+    scenarios:
+      - name: 查询操作链
+        steps:
+          - {keyword: Given, content: alice 授权 bob 且 bob 修改表格并触发检查}
+          - {keyword: When, content: alice 在审计页按 bob 过滤}
+          - {keyword: Then, content: 只显示 bob 的对应操作，字段完整且重启后仍存在}
+      - name: 普通成员不能读组织审计
+        steps:
+          - {keyword: Given, content: bob 是普通 member 且仓库权限为 write}
+          - {keyword: When, content: bob 直接调用组织审计查询接口}
+          - {keyword: Then, content: 返回 403}
+
+  - id: SPREADSHEETS
+    name: 可编辑且带版本的小型预算表
+    type: ATOMIC
+    description: |
+      表格包含项目名称和预算两列，支持增删行、编辑和预算合计。
+      保存允许预算为 0 和项目名为空，供后续业务检查发现问题；
+      负数和非数字属于输入格式错误，不允许保存。
+      每次成功修改都增加表格版本号，失败请求不改变版本。
+    dependencies: [PERMISSIONS, AUDIT]
+    scenarios:
+      - name: 编辑与合计
+        steps:
+          - {keyword: Given, content: bob 为 write 且两行预算分别为 10 和 20}
+          - {keyword: When, content: bob 把第一行改为 15 并刷新页面}
+          - {keyword: Then, content: 第一行仍为 15，合计为 35，版本号增加并留下审计事件}
+      - name: 输入格式校验
+        steps:
+          - {keyword: Given, content: 当前预算为 10}
+          - {keyword: When, content: write 用户尝试保存负数或非数字预算}
+          - {keyword: Then, content: 明确显示错误且预算和版本不变}
+
+  - id: ACTIONS
+    name: 基于实际表格内容的内置检查
+    type: ATOMIC
+    description: |
+      write/admin 用户可手动触发 validate-sheet。运行绑定触发时的表格版本快照，
+      经过 queued/in_progress/completed 状态，记录步骤日志、时间与 success/failure。
+      检查要求至少一行数据、每行项目名非空且预算严格大于 0。
+      结果必须由快照内容决定，不可随机，也不执行用户提供的命令。
+    dependencies: [SPREADSHEETS, AUDIT]
+    scenarios:
+      - name: 失败后修复重跑
+        steps:
+          - {keyword: Given, content: 表格存在预算为 0 的行}
+          - {keyword: When, content: bob 运行检查，将预算改成 5 后再次运行}
+          - {keyword: Then, content: 两次运行分别为 failure 和 success，保留独立版本号及日志}
+      - name: 运行读取固定快照
+        steps:
+          - {keyword: Given, content: 版本 2 检查已开始执行}
+          - {keyword: When, content: 用户同时编辑表格形成版本 3}
+          - {keyword: Then, content: 该运行仍记录版本 2 的结果，不能标记版本 3 检查成功}

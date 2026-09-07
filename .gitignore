@@ -1,2 +1,12 @@
 # Google App Engine generated folder
 appengine-generated/
+
+# Local learning environment and generated runs
+.venv/
+__pycache__/
+*.py[cod]
+runs/
+.env
+.env.*
+!.env.example
+.DS_Store

@@ -1,0 +1,38 @@
+# 第一课的精简练习输入。不是主办方正式赛题。
+id: ROOT
+name: GitHub + Spreadsheets 功能复刻
+type: FOLDER
+children:
+  - id: PERMISSIONS
+    name: 组织角色与仓库权限
+    description: 组织 owner 可以修改本组织其他成员的权限，普通 member 不可以。
+    type: ATOMIC
+    scenarios:
+      - name: 普通成员不能修改其他成员的权限
+        steps:
+          - keyword: Given
+            content: Bob 是普通 member，Carol 当前权限是 read。
+          - keyword: When
+            content: Bob 尝试把 Carol 的权限改成 write。
+          - keyword: Then
+            content: 系统拒绝 Bob 的操作并返回错误，Carol 的权限仍是 read。
+      - name: 组织拥有者可以修改其他成员的权限
+        steps:
+          - keyword: Given
+            content: Alice 是 owner，Carol 当前权限是 read。
+          - keyword: When
+            content: Alice 把 Carol 的权限改成 write。
+          - keyword: Then
+            content: 系统返回修改成功，Carol 的权限变为 write。
+  - id: SPREADSHEETS
+    name: 预算表格的查看与编辑
+    type: ATOMIC
+  - id: ACTIONS
+    name: 手动触发表格检查
+    type: ATOMIC
+  - id: RULESETS
+    name: 检查通过后才允许提交
+    type: ATOMIC
+  - id: AUDIT
+    name: 记录谁在什么时候做了什么
+    type: ATOMIC
